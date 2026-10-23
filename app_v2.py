@@ -21,25 +21,21 @@ def conectar_gsheets():
     ]
 
     try:
-        # Determinamos de dónde leer las credenciales
-        if "gcp_service_account" in st.secrets:
-            credentials_dict = dict(st.secrets["gcp_service_account"])
-        else:
-            json_str = os.environ.get("GCP_CREDENTIALS_JSON")
-            if not json_str:
-                raise ValueError(
-                    "No se encontró la variable de entorno GCP_CREDENTIALS_JSON."
-                )
-            credentials_dict = json.loads(json_str)
+        # Intentamos leer de la variable de entorno primero (ideal para Render)
+        json_str = os.environ.get("GCP_CREDENTIALS_JSON")
 
-        # Autenticación y conexión
+        if json_str:
+            credentials_dict = json.loads(json_str)
+        else:
+            # Si no hay variable de entorno, intentamos usar st.secrets (ideal para local)
+            credentials_dict = dict(st.secrets["gcp_service_account"])
+
         creds = Credentials.from_service_account_info(
             credentials_dict, scopes=scope
         )
         client = gspread.authorize(creds)
-        sheet = client.open("base_datos_mercado").sheet1
-
-        return sheet  # <-- Aquí termina la función exitosamente
+        sheet = client.open("BaseDatosMercado").sheet1
+        return sheet
 
     except Exception as e:
         st.error(f"Error crítico al conectar con Google Sheets: {e}")
