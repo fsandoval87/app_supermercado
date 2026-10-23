@@ -34,7 +34,7 @@ def conectar_gsheets():
             credentials_dict, scopes=scope
         )
         client = gspread.authorize(creds)
-        sheet = client.open("BaseDatosMercado").sheet1
+        sheet = client.open("base_datos_mercado").sheet1
         return sheet
 
     except Exception as e:
