@@ -1,5 +1,5 @@
-import json
-import os
+from google.oauth2.service_account import Credentials
+import gspread
 import streamlit as st
 
 # Configuración de la página
@@ -7,27 +7,89 @@ st.set_page_config(
     page_title="App de Compras del Hogar", page_icon="🛒", layout="centered"
 )
 
-st.title("🛒 Lista de Mercado Compartida")
-
-# Nombre del archivo donde se guardarán los datos de forma persistente
-ARCHIVO_DATOS = "datos_mercado.json"
+st.title("🛒 Lista de Mercado Compartida (Google Sheets)")
 
 
-# Funciones para cargar y guardar en JSON
-def cargar_datos():
-    if os.path.exists(ARCHIVO_DATOS):
-        try:
-            with open(ARCHIVO_DATOS, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            # Si el archivo está corrupto o vacío, devolvemos la estructura por defecto
-            return None
-    return None
+# --- CONEXIÓN A GOOGLE SHEETS ---
+@st.cache_resource
+def conectar_gsheets():
+    # Cargamos las credenciales desde los secretos de Streamlit (st.secrets)
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials_dict = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(
+        credentials_dict, scopes=scope
+    )
+    client = gspread.authorize(creds)
+
+    # Abre la hoja de cálculo por su nombre exacto en Google Drive
+    sheet = client.open("base_datos_mercado").sheet1
+    return sheet
 
 
-def guardar_datos(datos):
-    with open(ARCHIVO_DATOS, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=4)
+try:
+    sheet = conectar_gsheets()
+except Exception as e:
+    st.error(
+        f"Error al conectar con Google Sheets. Verifica tus secretos en Streamlit. Detalle: {e}"
+    )
+    st.stop()
+
+
+# Función para leer los datos de la hoja y transformarlos a nuestro diccionario
+def cargar_datos_desde_sheets():
+    registros = sheet.get_all_records()  # Retorna lista de diccionarios
+    # Estructura base de tus 10 categorías
+    datos = {
+        "Frutas": [],
+        "Verduras": [],
+        "Carnes y pescado": [],
+        "Lácteos": [],
+        "Granos": [],
+        "Cereales": [],
+        "Legumbres": [],
+        "Aceite, condimentos y endulzantes": [],
+        "Aseo de hogar": [],
+        "Aseo personal": [],
+    }
+
+    for row in registros:
+        cat = row.get("Categoria")
+        if cat in datos:
+            # Convertir el valor de 'Comprado' de texto/booleano a booleano real de Python
+            comprado_val = row.get("Comprado")
+            if isinstance(comprado_val, str):
+                comprado_bool = comprado_val.lower() == "true"
+            else:
+                comprado_bool = bool(comprado_val)
+
+            datos[cat].append(
+                {
+                    "nombre": row.get("Nombre"),
+                    "cantidad": row.get("Cantidad"),
+                    "comprado": comprado_bool,
+                }
+            )
+    return datos
+
+
+# Función para sobrescribir toda la hoja con el estado actual de la app
+def guardar_datos_en_sheets(lista_mercado):
+    # Fila de encabezados
+    filas = [["Categoria", "Nombre", "Cantidad", "Comprado"]]
+
+    for cat, items in lista_mercado.items():
+        for item in items:
+            filas.append(
+                [cat, item["nombre"], item["cantidad"], item["comprado"]]
+            )
+
+    sheet.clear()  # Limpia la hoja
+    sheet.update(
+        filas
+    )  # Escribe todas las filas actualizadas de una vez en Google Sheets
 
 
 # 1. Catálogo completo de artículos comunes por categoría
@@ -126,36 +188,9 @@ if "catalogo_comun" not in st.session_state:
         ],
     }
 
-# 2. Inicializar el estado de la lista cargando desde el JSON (o creando uno por defecto si no existe)
+# 2. Cargar estado inicial desde Google Sheets
 if "lista_mercado" not in st.session_state:
-    datos_cargados = cargar_datos()
-    if datos_cargados is not None:
-        st.session_state.lista_mercado = datos_cargados
-    else:
-        # Estructura inicial por defecto si el archivo no existe
-        st.session_state.lista_mercado = {
-            "Frutas": [
-                {"nombre": "Manzanas verdes", "cantidad": 4, "comprado": False},
-                {"nombre": "Bananos", "cantidad": 8, "comprado": False},
-                {"nombre": "Arándanos", "cantidad": 2, "comprado": False}
-            ],
-            "Verduras": [
-                {"nombre": "Tomates", "cantidad": 5, "comprado": False},
-                {"nombre": "Cebolla morada", "cantidad": 3, "comprado": False}
-            ],
-            "Carnes y pescado": [
-                {"nombre": "Carne molida de res",
-                    "cantidad": "1 kg", "comprado": False}
-            ],
-            "Lácteos": [{"nombre": "Queso cuajada", "cantidad": 2, "comprado": False}],
-            "Granos": [],
-            "Cereales": [],
-            "Legumbres": [],
-            "Aceite, condimentos y endulzantes": [],
-            "Aseo de hogar": [],
-            "Aseo personal": [],
-        }
-        guardar_datos(st.session_state.lista_mercado)
+    st.session_state.lista_mercado = cargar_datos_desde_sheets()
 
 # 3. Selector de Rol en la barra lateral (Sidebar)
 st.sidebar.header("👤 Selección de Usuario")
@@ -166,7 +201,7 @@ rol = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "**Usuario 1:** Agrega, modifica cantidades o elimina artículos (Guardado automático).\n\n**Usuario 2:** Revisa cantidades y marca lo comprado."
+    "**Usuario 1:** Agrega, modifica o elimina (Sincronizado en Google Sheets).\n\n**Usuario 2:** Revisa cantidades y marca lo comprado."
 )
 
 # ==========================================
@@ -200,12 +235,13 @@ if rol == "Usuario 1 (Registrar artículos)":
     if st.button("Agregar selección rápida"):
         if seleccionados_rapidos:
             for prod in seleccionados_rapidos:
-                cant_def = "1 kg" if categoria_seleccionada == "Carnes y pescado" else 1
+                cant_def = (
+                    "1 kg" if categoria_seleccionada == "Carnes y pescado" else 1
+                )
                 st.session_state.lista_mercado[categoria_seleccionada].append(
                     {"nombre": prod, "cantidad": cant_def, "comprado": False}
                 )
-            # Guardar cambios en el archivo JSON
-            guardar_datos(st.session_state.lista_mercado)
+            guardar_datos_en_sheets(st.session_state.lista_mercado)
             st.success(
                 f"¡Se agregaron {len(seleccionados_rapidos)} artículos!")
             st.rerun()
@@ -244,8 +280,7 @@ if rol == "Usuario 1 (Registrar artículos)":
                         "comprado": False,
                     }
                 )
-                # Guardar cambios en el archivo JSON
-                guardar_datos(st.session_state.lista_mercado)
+                guardar_datos_en_sheets(st.session_state.lista_mercado)
                 st.success(f"¡'{nuevo_articulo}' agregado!")
                 st.rerun()
         else:
@@ -255,9 +290,6 @@ if rol == "Usuario 1 (Registrar artículos)":
 
     # --- SECCIÓN C: MODIFICAR O ELIMINAR ARTÍCULOS EXISTENTES ---
     st.markdown("### ⚙️ Modificar cantidades o eliminar artículos")
-    st.markdown(
-        "Aquí puedes corregir cantidades o borrar artículos ingresados por error:"
-    )
 
     hay_articulos_totales = any(
         items for items in st.session_state.lista_mercado.values()
@@ -288,7 +320,7 @@ if rol == "Usuario 1 (Registrar artículos)":
                                 )
                                 if nueva_cant != item["cantidad"]:
                                     item["cantidad"] = nueva_cant
-                                    guardar_datos(
+                                    guardar_datos_en_sheets(
                                         st.session_state.lista_mercado
                                     )
                             else:
@@ -307,14 +339,16 @@ if rol == "Usuario 1 (Registrar artículos)":
                                 )
                                 if nueva_cant != item["cantidad"]:
                                     item["cantidad"] = nueva_cant
-                                    guardar_datos(
+                                    guardar_datos_en_sheets(
                                         st.session_state.lista_mercado
                                     )
 
                         with cols[2]:
                             if st.button("🗑️ Borrar", key=f"del_{cat}_{idx}"):
                                 items.pop(idx)
-                                guardar_datos(st.session_state.lista_mercado)
+                                guardar_datos_en_sheets(
+                                    st.session_state.lista_mercado
+                                )
                                 st.rerun()
 
 # ==========================================
@@ -355,6 +389,7 @@ else:
                         )
                         if comprado:
                             item["comprado"] = True
-                            # Guardar inmediatamente al marcar como comprado
-                            guardar_datos(st.session_state.lista_mercado)
+                            guardar_datos_en_sheets(
+                                st.session_state.lista_mercado
+                            )
                             st.rerun()

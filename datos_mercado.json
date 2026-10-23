@@ -1,0 +1,51 @@
+{
+    "Frutas": [
+        {
+            "nombre": "Manzanas verdes",
+            "cantidad": 4,
+            "comprado": false
+        },
+        {
+            "nombre": "Bananos",
+            "cantidad": 8,
+            "comprado": false
+        },
+        {
+            "nombre": "Arándanos",
+            "cantidad": 2,
+            "comprado": false
+        }
+    ],
+    "Verduras": [
+        {
+            "nombre": "Tomates",
+            "cantidad": 5,
+            "comprado": false
+        },
+        {
+            "nombre": "Cebolla morada",
+            "cantidad": 3,
+            "comprado": false
+        }
+    ],
+    "Carnes y pescado": [
+        {
+            "nombre": "Carne molida de res",
+            "cantidad": "1 kg",
+            "comprado": false
+        }
+    ],
+    "Lácteos": [
+        {
+            "nombre": "Queso cuajada",
+            "cantidad": 2,
+            "comprado": false
+        }
+    ],
+    "Granos": [],
+    "Cereales": [],
+    "Legumbres": [],
+    "Aceite, condimentos y endulzantes": [],
+    "Aseo de hogar": [],
+    "Aseo personal": []
+}
