@@ -1,3 +1,5 @@
+import json
+import os
 from google.oauth2.service_account import Credentials
 import gspread
 import streamlit as st
@@ -13,32 +15,40 @@ st.title("🛒 Lista de Mercado Compartida (Google Sheets)")
 # --- CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
 def conectar_gsheets():
-    # Cargamos las credenciales desde los secretos de Streamlit (st.secrets)
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-    credentials_dict = dict(st.secrets["gcp_service_account"])
-    creds = Credentials.from_service_account_info(
-        credentials_dict, scopes=scope
-    )
-    client = gspread.authorize(creds)
 
-    # Abre la hoja de cálculo por su nombre exacto en Google Drive
-    sheet = client.open("base_datos_mercado").sheet1
-    return sheet
+    try:
+        # Determinamos de dónde leer las credenciales
+        if "gcp_service_account" in st.secrets:
+            credentials_dict = dict(st.secrets["gcp_service_account"])
+        else:
+            json_str = os.environ.get("GCP_CREDENTIALS_JSON")
+            if not json_str:
+                raise ValueError(
+                    "No se encontró la variable de entorno GCP_CREDENTIALS_JSON."
+                )
+            credentials_dict = json.loads(json_str)
+
+        # Autenticación y conexión
+        creds = Credentials.from_service_account_info(
+            credentials_dict, scopes=scope
+        )
+        client = gspread.authorize(creds)
+        sheet = client.open("base_datos_mercado").sheet1
+
+        return sheet  # <-- Aquí termina la función exitosamente
+
+    except Exception as e:
+        st.error(f"Error crítico al conectar con Google Sheets: {e}")
+        raise e
 
 
-try:
-    sheet = conectar_gsheets()
-except Exception as e:
-    st.error(
-        f"Error al conectar con Google Sheets. Verifica tus secretos en Streamlit. Detalle: {e}"
-    )
-    st.stop()
+sheet = conectar_gsheets()  # Conexión a Google Sheets al inicio de la app
 
 
-# Función para leer los datos de la hoja y transformarlos a nuestro diccionario
 def cargar_datos_desde_sheets():
     registros = sheet.get_all_records()  # Retorna lista de diccionarios
     # Estructura base de tus 10 categorías
